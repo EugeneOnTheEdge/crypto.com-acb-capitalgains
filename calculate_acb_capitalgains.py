@@ -20,7 +20,9 @@ df = df.sort_values("Timestamp (UTC)").reset_index(drop=True)
 
 # New columns
 df["processed"] = "NOT_PROCESSED"
-df["transaction type"] = "OTHER_EXEMPT"
+df["transaction type"] = "OTHER"
+df["disposition status"] = "NON-DISPOSITION"
+df["exempt from ACB/capital gains calculation?"] = "UNKNOWN"
 
 # ---------------------------
 # 2. Storage
@@ -42,6 +44,7 @@ for coin in coins:
 for i, row in df.iterrows():
 
     try:
+
         if pd.isna(row["Timestamp (UTC)"]):
             raise ValueError("Invalid timestamp")
 
@@ -51,7 +54,7 @@ for i, row in df.iterrows():
         amount = float(row["Amount"]) if pd.notna(row["Amount"]) else 0.0
 
         # ----------------------------------
-        # BUY (CAD → Crypto)
+        # BUY
         # ----------------------------------
         if kind in ["crypto_purchase", "viban_purchase", "recurring_buy"]:
 
@@ -60,6 +63,7 @@ for i, row in df.iterrows():
             cost = abs(native_amount)
 
             df.at[i, "transaction type"] = "BUY"
+            df.at[i, "exempt from ACB/capital gains calculation?"] = "NOT_EXEMPT"
 
             if qty <= 0:
                 raise ValueError("Invalid quantity")
@@ -82,7 +86,7 @@ for i, row in df.iterrows():
             df.at[i, "processed"] = "OK"
 
         # ----------------------------------
-        # SELL (Disposition)
+        # SELL
         # ----------------------------------
         elif kind in ["crypto_viban_exchange", "crypto_exchange"]:
 
@@ -91,6 +95,8 @@ for i, row in df.iterrows():
             proceeds = native_amount
 
             df.at[i, "transaction type"] = "SELL"
+            df.at[i, "disposition status"] = "DISPOSITION"
+            df.at[i, "exempt from ACB/capital gains calculation?"] = "NOT_EXEMPT"
 
             if coin not in holdings or holdings[coin]["quantity"] <= 0:
                 df.at[i, "processed"] = "WARNING"
@@ -111,7 +117,7 @@ for i, row in df.iterrows():
 
             avg_acb = (
                 holdings[coin]["acb"] / holdings[coin]["quantity"]
-                if holdings[coin]["quantity"] > 0 else 0.0
+                if holdings[coin]["quantity"] > 0 else 0
             )
 
             df.at[i, f"spot price cad {coin}"] = spot_price
@@ -123,7 +129,7 @@ for i, row in df.iterrows():
             df.at[i, "processed"] = "OK"
 
         # ----------------------------------
-        # INCOME (cashback, rewards)
+        # INCOME
         # ----------------------------------
         elif kind in ["referral_card_cashback", "staking_reward"]:
 
@@ -131,7 +137,8 @@ for i, row in df.iterrows():
             qty = amount
             income_value = native_amount
 
-            df.at[i, "transaction type"] = "INCOME (NON-DISPOSITION)"
+            df.at[i, "transaction type"] = "INCOME"
+            df.at[i, "exempt from ACB/capital gains calculation?"] = "NOT_EXEMPT"
 
             if coin not in holdings:
                 holdings[coin] = {"quantity": 0.0, "acb": 0.0}
@@ -148,34 +155,47 @@ for i, row in df.iterrows():
             df.at[i, "processed"] = "OK"
 
         # ----------------------------------
-        # TRANSFERS (Exempt)
+        # DEPOSIT (likely own wallet)
         # ----------------------------------
-        elif kind in [
-            "exchange_to_crypto_transfer",
-            "crypto_deposit"
-        ]:
+        elif kind in ["crypto_deposit"]:
 
-            df.at[i, "transaction type"] = "TRANSFER_EXEMPT (NON-DISPOSITION)"
+            df.at[i, "transaction type"] = "DEPOSIT"
+            df.at[i, "exempt from ACB/capital gains calculation?"] = "EXEMPT"
             df.at[i, "processed"] = "NOT_PROCESSED"
 
         # ----------------------------------
-        # SUPERCHARGER LOCK/UNLOCK (Exempt)
+        # WITHDRAWAL (unknown ownership)
+        # ----------------------------------
+        elif kind in ["exchange_to_crypto_transfer"]:
+
+            df.at[i, "transaction type"] = "WITHDRAWAL"
+            df.at[i, "exempt from ACB/capital gains calculation?"] = "UNKNOWN"
+            df.at[i, "processed"] = "WARNING"
+
+        # ----------------------------------
+        # SUPERCHARGER
         # ----------------------------------
         elif kind in [
             "supercharger_deposit",
             "supercharger_withdrawal"
         ]:
 
-            df.at[i, "transaction type"] = "LOCK_EXEMPT (NON-DISPOSITION)"
+            df.at[i, "transaction type"] = "LOCK"
+            df.at[i, "exempt from ACB/capital gains calculation?"] = "EXEMPT"
             df.at[i, "processed"] = "NOT_PROCESSED"
 
         else:
-            df.at[i, "transaction type"] = "OTHER_EXEMPT (NON-DISPOSITION)"
+
+            df.at[i, "transaction type"] = "OTHER"
+            df.at[i, "exempt from ACB/capital gains calculation?"] = "UNKNOWN"
             df.at[i, "processed"] = "NOT_PROCESSED"
 
     except Exception:
+
         df.at[i, "processed"] = "ERROR"
         df.at[i, "transaction type"] = "ERROR"
+        df.at[i, "disposition status"] = "ERROR"
+        df.at[i, "exempt from ACB/capital gains calculation?"] = "ERROR"
 
 # ---------------------------
 # 4. Format Timestamp
@@ -193,7 +213,14 @@ df.to_csv(output_path, index=False)
 # ---------------------------
 print("\nProcessing Summary:")
 print(df["processed"].value_counts())
+
 print("\nTransaction Type Summary:")
 print(df["transaction type"].value_counts())
+
+print("\nACB Exemption Summary:")
+print(df["exempt from ACB/capital gains calculation?"].value_counts())
+
+print("\nDisposition Status Summary:")
+print(df["disposition status"].value_counts())
 
 print(f"\nDone ✅ File saved to: {output_path}")
