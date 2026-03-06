@@ -18,28 +18,35 @@ df["Timestamp (UTC)"] = pd.to_datetime(
 df = df[df["Native Currency"] == "CAD"].copy()
 df = df.sort_values("Timestamp (UTC)").reset_index(drop=True)
 
-# New columns
+# ---------------------------
+# 2. Columns
+# ---------------------------
 df["processed"] = "NOT_PROCESSED"
 df["transaction type"] = "OTHER"
-df["disposition status"] = "NON-DISPOSITION"
-df["exempt from ACB/capital gains calculation?"] = "UNKNOWN"
+df["disposition status"] = "NON_DISPOSITION"
+df["exempt from ACB/capital gains calculation?"] = "NON_EXEMPT"
 
 # ---------------------------
-# 2. Storage
+# 3. Storage
 # ---------------------------
 holdings = {}
-coins = set(df["Currency"].dropna().unique())
+coins = set()
+
+for _, row in df.iterrows():
+    if pd.notna(row["Currency"]) and row["Currency"] != "CAD":
+        coins.add(row["Currency"])
+    if pd.notna(row["To Currency"]) and row["To Currency"] != "CAD":
+        coins.add(row["To Currency"])
 
 for coin in coins:
-    if coin != "CAD":
-        df[f"adjusted cost base {coin}"] = 0.0
-        df[f"capital gains {coin}"] = 0.0
-        df[f"average acb per unit {coin}"] = 0.0
-        df[f"quantity remaining {coin}"] = 0.0
-        df[f"spot price cad {coin}"] = 0.0
+    df[f"adjusted cost base {coin}"] = 0.0
+    df[f"capital gains {coin}"] = 0.0
+    df[f"average acb per unit {coin}"] = 0.0
+    df[f"quantity remaining {coin}"] = 0.0
+    df[f"spot price cad {coin}"] = 0.0
 
 # ---------------------------
-# 3. Process Transactions
+# 4. Processing
 # ---------------------------
 for i, row in df.iterrows():
 
@@ -49,13 +56,13 @@ for i, row in df.iterrows():
             raise ValueError("Invalid timestamp")
 
         kind = str(row["Transaction Kind"]).lower()
+
         currency = row["Currency"]
-        native_amount = float(row["Native Amount"])
+
+        native_amount = float(row["Native Amount"]) if pd.notna(row["Native Amount"]) else 0.0
         amount = float(row["Amount"]) if pd.notna(row["Amount"]) else 0.0
 
-        # ----------------------------------
-        # BUY
-        # ----------------------------------
+        # ---------------- BUY ----------------
         if kind in ["crypto_purchase", "viban_purchase", "recurring_buy"]:
 
             coin = row["To Currency"]
@@ -63,10 +70,6 @@ for i, row in df.iterrows():
             cost = abs(native_amount)
 
             df.at[i, "transaction type"] = "BUY"
-            df.at[i, "exempt from ACB/capital gains calculation?"] = "NOT_EXEMPT"
-
-            if qty <= 0:
-                raise ValueError("Invalid quantity")
 
             if coin not in holdings:
                 holdings[coin] = {"quantity": 0.0, "acb": 0.0}
@@ -85,9 +88,7 @@ for i, row in df.iterrows():
 
             df.at[i, "processed"] = "OK"
 
-        # ----------------------------------
-        # SELL
-        # ----------------------------------
+        # ---------------- SELL ----------------
         elif kind in ["crypto_viban_exchange", "crypto_exchange"]:
 
             coin = currency
@@ -96,7 +97,6 @@ for i, row in df.iterrows():
 
             df.at[i, "transaction type"] = "SELL"
             df.at[i, "disposition status"] = "DISPOSITION"
-            df.at[i, "exempt from ACB/capital gains calculation?"] = "NOT_EXEMPT"
 
             if coin not in holdings or holdings[coin]["quantity"] <= 0:
                 df.at[i, "processed"] = "WARNING"
@@ -107,6 +107,7 @@ for i, row in df.iterrows():
                 continue
 
             avg_cost = holdings[coin]["acb"] / holdings[coin]["quantity"]
+
             acb_reduction = avg_cost * qty_sold
             gain = proceeds - acb_reduction
 
@@ -117,7 +118,7 @@ for i, row in df.iterrows():
 
             avg_acb = (
                 holdings[coin]["acb"] / holdings[coin]["quantity"]
-                if holdings[coin]["quantity"] > 0 else 0
+                if holdings[coin]["quantity"] > 0 else 0.0
             )
 
             df.at[i, f"spot price cad {coin}"] = spot_price
@@ -128,9 +129,7 @@ for i, row in df.iterrows():
 
             df.at[i, "processed"] = "OK"
 
-        # ----------------------------------
-        # INCOME
-        # ----------------------------------
+        # ---------------- INCOME ----------------
         elif kind in ["referral_card_cashback", "staking_reward"]:
 
             coin = currency
@@ -138,7 +137,6 @@ for i, row in df.iterrows():
             income_value = native_amount
 
             df.at[i, "transaction type"] = "INCOME"
-            df.at[i, "exempt from ACB/capital gains calculation?"] = "NOT_EXEMPT"
 
             if coin not in holdings:
                 holdings[coin] = {"quantity": 0.0, "acb": 0.0}
@@ -154,40 +152,46 @@ for i, row in df.iterrows():
 
             df.at[i, "processed"] = "OK"
 
-        # ----------------------------------
-        # DEPOSIT (likely own wallet)
-        # ----------------------------------
-        elif kind in ["crypto_deposit"]:
-
-            df.at[i, "transaction type"] = "DEPOSIT"
-            df.at[i, "exempt from ACB/capital gains calculation?"] = "EXEMPT"
-            df.at[i, "processed"] = "NOT_PROCESSED"
-
-        # ----------------------------------
-        # WITHDRAWAL (unknown ownership)
-        # ----------------------------------
-        elif kind in ["exchange_to_crypto_transfer"]:
-
-            df.at[i, "transaction type"] = "WITHDRAWAL"
-            df.at[i, "exempt from ACB/capital gains calculation?"] = "UNKNOWN"
-            df.at[i, "processed"] = "WARNING"
-
-        # ----------------------------------
-        # SUPERCHARGER
-        # ----------------------------------
+        # ---------------- SUPERCHARGER ----------------
         elif kind in [
             "supercharger_deposit",
             "supercharger_withdrawal"
         ]:
 
-            df.at[i, "transaction type"] = "LOCK"
+            df.at[i, "transaction type"] = "INTERNAL_TRANSFER"
             df.at[i, "exempt from ACB/capital gains calculation?"] = "EXEMPT"
+            df.at[i, "processed"] = "OK"
+
+        # ---------------- CRYPTO EARN ----------------
+        elif kind in [
+            "crypto_earn_program_created",
+            "crypto_earn_program_withdrawn"
+        ]:
+
+            df.at[i, "transaction type"] = "INTERNAL_TRANSFER"
+            df.at[i, "exempt from ACB/capital gains calculation?"] = "EXEMPT"
+            df.at[i, "processed"] = "OK"
+
+        # ---------------- WALLET TRANSFERS ----------------
+        elif kind in [
+            "exchange_to_crypto_transfer",
+            "crypto_deposit"
+        ]:
+
+            df.at[i, "transaction type"] = "TRANSFER"
+            df.at[i, "exempt from ACB/capital gains calculation?"] = "EXEMPT"
+            df.at[i, "processed"] = "OK"
+
+        # ---------------- EARN INTEREST ----------------
+        elif kind == "crypto_earn_interest_paid":
+
+            df.at[i, "transaction type"] = "INCOME_INTEREST"
             df.at[i, "processed"] = "NOT_PROCESSED"
 
+        # ---------------- OTHER ----------------
         else:
 
             df.at[i, "transaction type"] = "OTHER"
-            df.at[i, "exempt from ACB/capital gains calculation?"] = "UNKNOWN"
             df.at[i, "processed"] = "NOT_PROCESSED"
 
     except Exception:
@@ -198,18 +202,18 @@ for i, row in df.iterrows():
         df.at[i, "exempt from ACB/capital gains calculation?"] = "ERROR"
 
 # ---------------------------
-# 4. Format Timestamp
+# 5. Format Timestamp
 # ---------------------------
 df["Timestamp (UTC)"] = df["Timestamp (UTC)"].dt.strftime("%d-%b-%Y %H:%M")
 
 # ---------------------------
-# 5. Save
+# 6. Save
 # ---------------------------
 output_path = "transformed/" + file_name
 df.to_csv(output_path, index=False)
 
 # ---------------------------
-# 6. Summary
+# 7. Summary
 # ---------------------------
 print("\nProcessing Summary:")
 print(df["processed"].value_counts())
@@ -217,10 +221,10 @@ print(df["processed"].value_counts())
 print("\nTransaction Type Summary:")
 print(df["transaction type"].value_counts())
 
-print("\nACB Exemption Summary:")
-print(df["exempt from ACB/capital gains calculation?"].value_counts())
-
 print("\nDisposition Status Summary:")
 print(df["disposition status"].value_counts())
+
+print("\nExemption Summary:")
+print(df["exempt from ACB/capital gains calculation?"].value_counts())
 
 print(f"\nDone ✅ File saved to: {output_path}")
