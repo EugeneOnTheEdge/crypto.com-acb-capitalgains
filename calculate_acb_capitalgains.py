@@ -81,7 +81,7 @@ for i, row in df.iterrows():
             df.at[i, "processed"] = "OK"
 
         # ---------------- SELL ----------------
-        elif kind in ["crypto_viban_exchange", "crypto_exchange", "crypto_withdrawal", "card_top_up"]:
+        elif kind in ["crypto_viban_exchange", "crypto_withdrawal", "card_top_up"]:
             coin = currency
             qty_sold = abs(amount)
             proceeds = native_amount
@@ -108,6 +108,7 @@ for i, row in df.iterrows():
             df.at[i, f"average acb per unit {coin}"] = avg_acb
             df.at[i, f"quantity remaining {coin}"] = holdings[coin]["quantity"]
             df.at[i, "processed"] = "OK"
+
 
         # ---------------- INCOME (Rewards / Cashback / Crypto Earn Interest) ----------------
         elif kind in [
@@ -197,6 +198,69 @@ for i, row in df.iterrows():
             df.at[i, f"adjusted cost base {coin}"] = holdings[coin]["acb"]
             df.at[i, f"average acb per unit {coin}"] = avg_acb
             df.at[i, f"quantity remaining {coin}"] = holdings[coin]["quantity"]
+
+            df.at[i, "processed"] = "OK"
+
+
+        # ---------------- SWAP (CRYPTO -> CRYPTO) ----------------
+        elif kind == "crypto_exchange":
+
+            sell_coin = currency
+            buy_coin = row["To Currency"]
+
+            qty_sold = abs(amount)
+            qty_bought = float(row["To Amount"])
+            value_cad = abs(native_amount)
+
+            df.at[i, "transaction type"] = "SWAP"
+            df.at[i, "disposition status"] = "DISPOSITION"
+            df.at[i, "exempt from ACB/capital gains calculation?"] = "NON_EXEMPT"
+
+            # ---------- SELL SIDE ----------
+            if sell_coin not in holdings or holdings[sell_coin]["quantity"] <= 0:
+                df.at[i, "processed"] = "WARNING"
+                continue
+
+            if qty_sold > holdings[sell_coin]["quantity"]:
+                df.at[i, "processed"] = "WARNING"
+                continue
+
+            avg_cost_sell = holdings[sell_coin]["acb"] / holdings[sell_coin]["quantity"]
+
+            acb_reduction = avg_cost_sell * qty_sold
+            gain = value_cad - acb_reduction
+
+            holdings[sell_coin]["quantity"] -= qty_sold
+            holdings[sell_coin]["acb"] -= acb_reduction
+
+            sell_spot = value_cad / qty_sold
+
+            avg_acb_sell = (
+                holdings[sell_coin]["acb"] / holdings[sell_coin]["quantity"]
+                if holdings[sell_coin]["quantity"] > 0 else 0
+            )
+
+            df.at[i, f"spot price cad {sell_coin}"] = sell_spot
+            df.at[i, f"capital gains {sell_coin}"] = gain
+            df.at[i, f"adjusted cost base {sell_coin}"] = holdings[sell_coin]["acb"]
+            df.at[i, f"average acb per unit {sell_coin}"] = avg_acb_sell
+            df.at[i, f"quantity remaining {sell_coin}"] = holdings[sell_coin]["quantity"]
+
+            # ---------- BUY SIDE ----------
+            if buy_coin not in holdings:
+                holdings[buy_coin] = {"quantity": 0.0, "acb": 0.0}
+
+            holdings[buy_coin]["quantity"] += qty_bought
+            holdings[buy_coin]["acb"] += value_cad
+
+            buy_spot = value_cad / qty_bought
+
+            avg_acb_buy = holdings[buy_coin]["acb"] / holdings[buy_coin]["quantity"]
+
+            df.at[i, f"spot price cad {buy_coin}"] = buy_spot
+            df.at[i, f"adjusted cost base {buy_coin}"] = holdings[buy_coin]["acb"]
+            df.at[i, f"average acb per unit {buy_coin}"] = avg_acb_buy
+            df.at[i, f"quantity remaining {buy_coin}"] = holdings[buy_coin]["quantity"]
 
             df.at[i, "processed"] = "OK"
 
