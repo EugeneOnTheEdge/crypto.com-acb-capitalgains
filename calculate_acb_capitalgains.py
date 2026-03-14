@@ -136,10 +136,32 @@ for i, row in df.iterrows():
             df.at[i, "exempt from ACB/capital gains calculation?"] = "EXEMPT"
             df.at[i, "processed"] = "OK"
 
-        # ---------------- WALLET TRANSFERS ----------------
+        # ---------------- WALLET DEPOSITS ----------------
         elif kind in ["exchange_to_crypto_transfer", "crypto_deposit"]:
+            coin = currency
+            qty = amount
+            cost = native_amount
+
             df.at[i, "transaction type"] = "TRANSFER"
-            df.at[i, "exempt from ACB/capital gains calculation?"] = "EXEMPT"
+            df.at[i, "exempt from ACB/capital gains calculation?"] = "NON_EXEMPT"
+
+            if coin not in holdings:
+                holdings[coin] = {"quantity": 0.0, "acb": 0.0}
+
+            if qty > 0:
+
+                spot_price = cost / qty
+
+                holdings[coin]["quantity"] += qty
+                holdings[coin]["acb"] += cost
+
+                avg_acb = holdings[coin]["acb"] / holdings[coin]["quantity"]
+
+                df.at[i, f"spot price cad {coin}"] = spot_price
+                df.at[i, f"adjusted cost base {coin}"] = holdings[coin]["acb"]
+                df.at[i, f"average acb per unit {coin}"] = avg_acb
+                df.at[i, f"quantity remaining {coin}"] = holdings[coin]["quantity"]
+
             df.at[i, "processed"] = "OK"
 
         # ---------------- OTHER / NOT PROCESSED ----------------
