@@ -19,4 +19,4 @@ Anytime an ACB goes below 0 for a disposal transaction, it will be marked as "WA
 
 
 ## Upcoming
-Per-coin T1 Schedule 3 report generati
+Per-coin T1 Schedule 3 report generation
