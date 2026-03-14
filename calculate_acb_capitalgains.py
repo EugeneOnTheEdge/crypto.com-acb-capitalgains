@@ -81,7 +81,7 @@ for i, row in df.iterrows():
             df.at[i, "processed"] = "OK"
 
         # ---------------- SELL ----------------
-        elif kind in ["crypto_viban_exchange", "crypto_exchange"]:
+        elif kind in ["crypto_viban_exchange", "crypto_exchange", "crypto_withdrawal", "card_top_up"]:
             coin = currency
             qty_sold = abs(amount)
             proceeds = native_amount
@@ -110,7 +110,16 @@ for i, row in df.iterrows():
             df.at[i, "processed"] = "OK"
 
         # ---------------- INCOME (Rewards / Cashback / Crypto Earn Interest) ----------------
-        elif kind in ["referral_card_cashback", "staking_reward", "supercharger_reward_to_app_credited", "crypto_earn_interest_paid"]:
+        elif kind in [
+            "referral_card_cashback",
+            "staking_reward",
+            "crypto_earn_interest_paid",
+            "supercharger_reward_to_app_credited",
+            "reimbursement",
+            "admin_wallet_credited",
+            "mco_stake_reward",
+            "rewards_platform_deposit_credited"
+        ]:
             coin = currency
             qty = amount
             income_value = native_amount
@@ -130,11 +139,13 @@ for i, row in df.iterrows():
             df.at[i, f"average acb per unit {coin}"] = avg_acb
             df.at[i, f"quantity remaining {coin}"] = holdings[coin]["quantity"]
 
+
         # ---------------- INTERNAL TRANSFERS ----------------
-        elif kind in ["supercharger_deposit", "supercharger_withdrawal", "crypto_earn_program_created", "crypto_earn_program_withdrawn"]:
+        elif kind in ["supercharger_deposit", "supercharger_withdrawal", "crypto_earn_program_created", "crypto_earn_program_withdrawn", "lockup_upgrade"]:
             df.at[i, "transaction type"] = "INTERNAL_TRANSFER"
             df.at[i, "exempt from ACB/capital gains calculation?"] = "EXEMPT"
             df.at[i, "processed"] = "OK"
+
 
         # ---------------- WALLET DEPOSITS ----------------
         elif kind in ["exchange_to_crypto_transfer", "crypto_deposit"]:
@@ -164,10 +175,37 @@ for i, row in df.iterrows():
 
             df.at[i, "processed"] = "OK"
 
+
+        elif kind == "reimbursement_reverted":
+            coin = currency
+            qty = amount
+            value = native_amount
+
+            df.at[i, "transaction type"] = "INCOME_REVERSAL"
+
+            if coin not in holdings:
+                holdings[coin] = {"quantity": 0.0, "acb": 0.0}
+
+            holdings[coin]["quantity"] += qty
+            holdings[coin]["acb"] += value
+
+            avg_acb = (
+                holdings[coin]["acb"] / holdings[coin]["quantity"]
+                if holdings[coin]["quantity"] != 0 else 0
+            )
+
+            df.at[i, f"adjusted cost base {coin}"] = holdings[coin]["acb"]
+            df.at[i, f"average acb per unit {coin}"] = avg_acb
+            df.at[i, f"quantity remaining {coin}"] = holdings[coin]["quantity"]
+
+            df.at[i, "processed"] = "OK"
+
+
         # ---------------- OTHER / NOT PROCESSED ----------------
         else:
             df.at[i, "transaction type"] = "OTHER"
             df.at[i, "processed"] = "NOT_PROCESSED"
+
 
     except Exception:
         df.at[i, "processed"] = "ERROR"
