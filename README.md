@@ -1,6 +1,8 @@
 # crypto.com-acb-capitalgains
-ACB (Adjusted Cost Base) and capital gains calculator for Crypto.com's CSV transactions
+ACB (Adjusted Cost Base) and capital gains calculator for Crypto.com's CSV transactions.
+
 Enriches the transaction history with ACB and capital gains for each crypto coin.
+
 Also generates a separate summary report detailing per-coin final aggregated ACB and capital gains. 
 
 ## SUPPORTED TRANSACTIONS
