@@ -304,3 +304,39 @@ print("\nExemption Summary:")
 print(df["exempt from ACB/capital gains calculation?"].value_counts())
 
 print(f"\nDone ✅ File saved to: {output_path}")
+
+
+# ---------------------------
+# 8. Generate Calculation Summary Report
+# ---------------------------
+
+summary_rows = []
+
+for coin in coins:
+
+    final_quantity = holdings.get(coin, {}).get("quantity", 0.0)
+    final_acb = holdings.get(coin, {}).get("acb", 0.0)
+
+    capital_gains_col = f"capital gains {coin}"
+
+    if capital_gains_col in df.columns:
+        total_gains = df[capital_gains_col].sum()
+    else:
+        total_gains = 0.0
+
+    summary_rows.append({
+        "coin": coin,
+        "holdings remaining": final_quantity,
+        "final ACB (CAD)": final_acb,
+        "aggregate capital gains (CAD)": total_gains
+    })
+
+summary_rows.sort(key=lambda x: x["coin"])
+summary_df = pd.DataFrame(summary_rows)
+
+summary_output_path = "transformed/calculation_summary_" + file_name
+
+summary_df.to_csv(summary_output_path, index=False)
+
+print("\nSummary report saved to:")
+print(summary_output_path)
