@@ -18,6 +18,13 @@ df["Timestamp (UTC)"] = pd.to_datetime(
 df = df[df["Native Currency"] == "CAD"].copy()
 df = df.sort_values("Timestamp (UTC)").reset_index(drop=True)
 
+cumulative_proceeds_of_disposition_by_year = {}
+cumulative_capital_gains_by_year = {}
+
+df["Tax Year"] = None
+df["Cumulative ALL-Coins Proceeds of Disposition (CAD)"] = 0.0
+df["Cumulative ALL-Coins Capital Gains (CAD)"] = 0.0
+
 # ---------------------------
 # 2. Columns
 # ---------------------------
@@ -52,6 +59,12 @@ for i, row in df.iterrows():
     try:
         if pd.isna(row["Timestamp (UTC)"]):
             raise ValueError("Invalid timestamp")
+        
+        tax_year = row["Timestamp (UTC)"].year
+        if tax_year not in cumulative_proceeds_of_disposition_by_year:
+            cumulative_proceeds_of_disposition_by_year[tax_year] = 0.0
+        if tax_year not in cumulative_capital_gains_by_year:
+            cumulative_capital_gains_by_year[tax_year] = 0.0
 
         kind = str(row["Transaction Kind"]).lower()
         currency = row["Currency"]
@@ -84,8 +97,8 @@ for i, row in df.iterrows():
         elif kind in ["crypto_viban_exchange", "crypto_withdrawal", "card_top_up", "card_cashback_reverted"]:
             coin = currency
             qty_sold = abs(amount)
-            proceeds = native_amount
-
+            proceeds = abs(native_amount)
+            
             df.at[i, "transaction type"] = "SELL"
             df.at[i, "disposition status"] = "DISPOSITION"
 
@@ -107,6 +120,12 @@ for i, row in df.iterrows():
             df.at[i, f"adjusted cost base {coin}"] = holdings[coin]["acb"]
             df.at[i, f"average acb per unit {coin}"] = avg_acb
             df.at[i, f"quantity remaining {coin}"] = holdings[coin]["quantity"]
+
+            # --- Custom code - for capital gains summary report and to track cumulative proceeds of disposition by year            
+            cumulative_proceeds_of_disposition_by_year[tax_year] += proceeds
+            cumulative_capital_gains_by_year[tax_year] += gain
+            # --- End of custom code
+
             df.at[i, "processed"] = "OK"
 
 
@@ -247,6 +266,11 @@ for i, row in df.iterrows():
             df.at[i, f"average acb per unit {sell_coin}"] = avg_acb_sell
             df.at[i, f"quantity remaining {sell_coin}"] = holdings[sell_coin]["quantity"]
 
+            # --- Custom code - for capital gains summary report and to track cumulative proceeds of disposition by year            
+            cumulative_proceeds_of_disposition_by_year[tax_year] += value_cad
+            cumulative_capital_gains_by_year[tax_year] += gain
+            # --- End of custom code
+
             # ---------- BUY SIDE ----------
             if buy_coin not in holdings:
                 holdings[buy_coin] = {"quantity": 0.0, "acb": 0.0}
@@ -270,6 +294,12 @@ for i, row in df.iterrows():
         else:
             df.at[i, "transaction type"] = "OTHER"
             df.at[i, "processed"] = "NOT_PROCESSED"
+        
+        
+        # --- Custom code - to track cumulative proceeds of disposition and capital gains by year for summary report
+        df.at[i, "Tax Year"] = tax_year
+        df.at[i, "Cumulative ALL-Coins Proceeds of Disposition (CAD)"] = str(cumulative_proceeds_of_disposition_by_year[tax_year])
+        df.at[i, "Cumulative ALL-Coins Capital Gains (CAD)"] = str(cumulative_capital_gains_by_year[tax_year])
 
 
     except Exception:
@@ -277,6 +307,7 @@ for i, row in df.iterrows():
         df.at[i, "transaction type"] = "ERROR"
         df.at[i, "disposition status"] = "ERROR"
         df.at[i, "exempt from ACB/capital gains calculation?"] = "ERROR"
+        raise Exception(f"Error processing row {i} with Transaction Kind: {row['Transaction Kind']}")
 
 # ---------------------------
 # 5. Format Timestamp
