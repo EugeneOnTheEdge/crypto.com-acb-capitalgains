@@ -4,7 +4,7 @@ import pandas as pd
 # 1. Read CSV
 # ---------------------------
 folder = "transactions/"
-file_name = "2021_crypto_transactions_record_20260228_181126.csv"
+file_name = "2021-2025_all_transactions.csv"
 file_path = folder + file_name
 
 df = pd.read_csv(file_path)
@@ -59,7 +59,7 @@ for i, row in df.iterrows():
         amount = float(row["Amount"]) if pd.notna(row["Amount"]) else 0.0
 
         # ---------------- BUY ----------------
-        if kind in ["crypto_purchase", "viban_purchase", "recurring_buy"]:
+        if kind in ["crypto_purchase", "viban_purchase", "recurring_buy", "recurring_buy_order"]:
             coin = row["To Currency"]
             qty = float(row["To Amount"])
             cost = abs(native_amount)
@@ -81,7 +81,7 @@ for i, row in df.iterrows():
             df.at[i, "processed"] = "OK"
 
         # ---------------- SELL ----------------
-        elif kind in ["crypto_viban_exchange", "crypto_withdrawal", "card_top_up"]:
+        elif kind in ["crypto_viban_exchange", "crypto_withdrawal", "card_top_up", "card_cashback_reverted"]:
             coin = currency
             qty_sold = abs(amount)
             proceeds = native_amount
@@ -119,7 +119,8 @@ for i, row in df.iterrows():
             "reimbursement",
             "admin_wallet_credited",
             "mco_stake_reward",
-            "rewards_platform_deposit_credited"
+            "rewards_platform_deposit_credited",
+            "finance.lockup.dpos_compound_interest.crypto_wallet"
         ]:
             coin = currency
             qty = amount
@@ -142,7 +143,7 @@ for i, row in df.iterrows():
 
 
         # ---------------- INTERNAL TRANSFERS ----------------
-        elif kind in ["supercharger_deposit", "supercharger_withdrawal", "crypto_earn_program_created", "crypto_earn_program_withdrawn", "lockup_upgrade"]:
+        elif kind in ["supercharger_deposit", "supercharger_withdrawal", "crypto_earn_program_created", "crypto_earn_program_withdrawn", "lockup_upgrade", "lockup_unlock"]:
             df.at[i, "transaction type"] = "INTERNAL_TRANSFER"
             df.at[i, "exempt from ACB/capital gains calculation?"] = "EXEMPT"
             df.at[i, "processed"] = "OK"
